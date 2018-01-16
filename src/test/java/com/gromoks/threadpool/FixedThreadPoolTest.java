@@ -32,9 +32,7 @@ public class FixedThreadPoolTest {
 
         AtomicInteger taskCount = new AtomicInteger(0);
 
-        Runnable run = () -> {
-            taskCount.getAndIncrement();
-        };
+        Runnable run = taskCount::getAndIncrement;
 
         for (int i = 0; i < 20; i++) {
             executor.execute(run);
