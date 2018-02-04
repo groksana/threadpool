@@ -8,25 +8,24 @@ import java.util.concurrent.LinkedBlockingQueue;
 
 public class FixedThreadPool implements Executor {
 
-    private final Thread[] threadPool;
     private final BlockingQueue<Runnable> runnableTaskQueue = new LinkedBlockingQueue<>();
     private volatile boolean activeQueue;
 
-    public FixedThreadPool(int threadCount) {
-        threadPool = new Thread[threadCount];
-        activeQueue = true;
-        Runnable taskRunner = this::taskRunner;
+    private final List<Thread> threadPool = new ArrayList<>();
+    private final int capacity;
+    private int activeThreadCount = 0;
 
-        for (int i = 0; i < threadCount; i++) {
-            Thread thread = new Thread(taskRunner);
-            threadPool[i] = thread;
-            thread.start();
-        }
+    public FixedThreadPool(int threadCount) {
+        activeQueue = true;
+        capacity = threadCount;
     }
 
     @Override
     public void execute(Runnable command) {
         if (activeQueue) {
+            if (activeThreadCount < capacity) {
+                threadInit();
+            }
             synchronized (runnableTaskQueue) {
                 runnableTaskQueue.offer(command);
                 runnableTaskQueue.notify();
@@ -45,10 +44,7 @@ public class FixedThreadPool implements Executor {
         List<Runnable> runnableList = new ArrayList<>();
 
         shutdown();
-
-        for (int i = 0; i < threadPool.length; i++) {
-            threadPool[i].interrupt();
-        }
+        threadPool.forEach(Thread::interrupt);
 
         synchronized (runnableTaskQueue) {
             runnableList.addAll(runnableTaskQueue);
@@ -64,9 +60,17 @@ public class FixedThreadPool implements Executor {
         }
     }
 
+    private void threadInit() {
+        activeThreadCount++;
+        Runnable taskRunner = this::taskRunner;
+        Thread thread = new Thread(taskRunner);
+        threadPool.add(thread);
+        thread.start();
+    }
+
     private void taskRunner() {
         while (!isTerminated()) {
-            Runnable task;
+            Runnable task = null;
 
             synchronized (runnableTaskQueue) {
                 while (runnableTaskQueue.isEmpty()) {
@@ -80,7 +84,9 @@ public class FixedThreadPool implements Executor {
                         break;
                     }
                 }
-                task = runnableTaskQueue.poll();
+                if (!Thread.currentThread().isInterrupted()) {
+                    task = runnableTaskQueue.poll();
+                } else {break;}
             }
             if (task != null) {
                 String name = Thread.currentThread().getName();
